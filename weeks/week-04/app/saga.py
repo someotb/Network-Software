@@ -4,5 +4,17 @@
 # и возвращать следующее состояние.
 
 def next_state(state: str, event: str) -> str:
-    # Ваш код здесь
-    raise NotImplementedError
+    transitions = {
+        "NEW": {
+            "PAY_OK": "PAID",
+            "PAY_FAIL": "CANCELLED",
+        },
+        "PAID": {
+            "DELIVERY_SUCCESS": "DONE",
+            "DELIVERY_FAILURE": "CANCELLED",
+            "CANCELED_BY_USER": "CANCELLED"
+        },
+        "DONE": {},
+        "CANCELLED": {}        
+    }
+    return transitions.get(state, {}).get(event)
