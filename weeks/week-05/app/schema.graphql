@@ -1,1 +1,19 @@
-# В этом месте вам необходимо: опишите GraphQL схему
+type Comment {
+    id: ID!
+    text: String!
+    author: String!
+}
+
+type Query {
+    comments: [Comment!]!
+    comment(id: ID!): Comment
+}
+
+input CreateCommentInput {
+    text: String!
+    author: String!
+}
+
+type Mutation {
+    createComment(input: CreateCommentInput!): Comment!
+}
