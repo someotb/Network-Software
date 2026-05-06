@@ -1,16 +1,31 @@
 syntax = "proto3";
 
-// Опишите ваш пакет и сервис здесь
-// package example;
+package tickets.v1;
 
-// service MyService {
-//   rpc MyMethod (MyRequest) returns (MyResponse);
-// }
+service TicketsService {
+    rpc CreateTicket (CreateTicketRequest) returns (CreateTicketResponse);
+    rpc GetTickets (GetTicketsRequest) returns (GetTicketsResponse);
+}
 
-// message MyRequest {
-//   string id = 1;
-// }
+message CreateTicketRequest {
+    string text = 1;
+    string status = 2;
+}
 
-// message MyResponse {
-//   string result = 1;
-// }
+message CreateTicketResponse {
+    string id = 1;
+    string text = 2;
+    string status = 3;
+}
+
+message GetTicketsRequest {}
+
+message GetTicketsResponse {
+    repeated Ticket tickets = 1;
+}
+
+message Ticket {
+    string id = 1;
+    string text = 2;
+    string status = 3;
+}
