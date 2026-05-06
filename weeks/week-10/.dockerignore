@@ -1,3 +1,9 @@
 .venv
 __pycache__
 *.pyc
+.git
+.pytest_cache
+*.md
+tests/
+.dockerignore
+Dockerfile

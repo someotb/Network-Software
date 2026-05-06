@@ -1,22 +1,50 @@
 version: '3.9'
+
 services:
-  app:
-    # Замените на имя образа
-    image: primer/obraz
+  reviews-svc-s15:
+    build: .
+    image: reviews-s15
+    container_name: reviews-svc-s15
+    ports:
+      - "8109:8109"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/reviews
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8109/health"]
       interval: 10s
       timeout: 3s
       retries: 3
-    networks:
-      - app-net
-  gateway:
-    # Замените на имя образа
-    image: primer/obraz
     depends_on:
-      - app
+      db:
+        condition: service_healthy
     networks:
       - app-net
+
+  db:
+    image: postgres:15-alpine
+    container_name: reviews-db
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=reviews
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-net
+
+  gateway:
+    image: nginx:alpine
+    container_name: reviews-gateway
+    ports:
+      - "80:80"
+    depends_on:
+      - reviews-svc-s15
+    networks:
+      - app-net
+
 networks:
   app-net:
     driver: bridge

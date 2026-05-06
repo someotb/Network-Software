@@ -1,28 +1,42 @@
 import time
-import requests
 import grpc
-# import service_pb2
-# import service_pb2_grpc
+import sys
+import os
 
-def run_rest_bench():
-    print("Starting REST benchmark...")
-    start = time.time()
-    # for _ in range(1000):
-    #     requests.get("http://localhost:8000/items")
-    end = time.time()
-    print(f"REST: {end - start:.4f} sec")
+week_08_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, week_08_path)
+
+from proto import service_pb2
+from proto import service_pb2_grpc
 
 def run_grpc_bench():
     print("Starting gRPC benchmark...")
-    # with grpc.insecure_channel('localhost:50051') as channel:
-    #     stub = service_pb2_grpc.MyServiceStub(channel)
-    #     start = time.time()
-    #     for _ in range(1000):
-    #         stub.MyMethod(service_pb2.MyRequest(id="1"))
-    #     end = time.time()
-    #     print(f"gRPC: {end - start:.4f} sec")
-    pass
+    with grpc.insecure_channel('localhost:50051') as channel:
+        stub = service_pb2_grpc.OrdersServiceStub(channel)
+
+        # Warmup
+        for _ in range(100):
+            stub.CreateOrder(service_pb2.CreateOrderRequest(text="warmup", priority=1))
+
+        # Benchmark
+        start = time.time()
+        for i in range(1000):
+            stub.CreateOrder(service_pb2.CreateOrderRequest(text=f"Order {i}", priority=i % 10))
+        end = time.time()
+
+        elapsed = end - start
+        rps = 1000 / elapsed
+        print(f"gRPC: {elapsed:.4f} sec")
+        print(f"gRPC RPS: {rps:.2f} requests/sec")
+        return elapsed, rps
 
 if __name__ == "__main__":
-    run_rest_bench()
-    run_grpc_bench()
+    print("=== gRPC Benchmark ===")
+    print("Make sure gRPC server is running on port 50051")
+    print()
+
+    grpc_time, grpc_rps = run_grpc_bench()
+
+    print()
+    print("=== Results ===")
+    print(f"gRPC: {grpc_time:.4f} sec, {grpc_rps:.2f} RPS")

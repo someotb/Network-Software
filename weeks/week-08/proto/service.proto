@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package orders.v1;
+
+service OrdersService {
+    rpc CreateOrder (CreateOrderRequest) returns (CreateOrderResponse);
+    rpc GetOrders (GetOrdersRequest) returns (GetOrdersResponse);
+
+    rpc SubscribeToOrders (SubscribeRequest) returns (stream OrderUpdate);
+}
+
+message CreateOrderRequest {
+    string text = 1;
+    int32 priority = 2;
+}
+
+message CreateOrderResponse {
+    string id = 1;
+    string text = 2;
+    int32 priority = 3;
+}
+
+message GetOrdersRequest {}
+
+message GetOrdersResponse {
+    repeated Order orders = 1;
+}
+
+message Order {
+    string id = 1;
+    string text = 2;
+    int32 priority = 3;
+}
+
+message SubscribeRequest {}
+
+message OrderUpdate {
+    string id = 1;
+    string text = 2;
+    int32 priority = 3;
+    string action = 4;  // "created", "updated", "deleted"
+}

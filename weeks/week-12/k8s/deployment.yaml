@@ -1,1 +1,40 @@
-# В этом месте вам необходимо: Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipments-app
+  labels:
+    app: shipments-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: shipments-app
+  template:
+    metadata:
+      labels:
+        app: shipments-app
+    spec:
+      containers:
+      - name: shipments-container
+        image: shipments-s15:latest
+        ports:
+        - containerPort: 8270
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8270
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8270
+          initialDelaySeconds: 5
+          periodSeconds: 5

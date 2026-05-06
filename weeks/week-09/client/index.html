@@ -1,2 +1,141 @@
-<!doctype html>
-<!-- В этом месте вам необходимо: реализуйте WebRTC клиент -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC P2P Chat - products-s15</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        #messages { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 10px; margin-bottom: 10px; }
+        #messageInput { width: 80%; padding: 10px; }
+        button { padding: 10px 20px; }
+        .status { color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>WebRTC P2P Chat</h1>
+    <p class="status" id="status">Connecting to signaling server...</p>
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Type a message...">
+    <button onclick="sendMessage()">Send</button>
+
+    <script>
+        const PROJECT_CODE = "products-s15";
+        const ws = new WebSocket('ws://localhost:8765');
+        let pc = null;
+        let dataChannel = null;
+
+        // WebSocket для signaling
+        ws.onopen = () => {
+            document.getElementById('status').textContent = 'Connected to signaling server. Waiting for peer...';
+            initWebRTC();
+        };
+
+        ws.onmessage = async (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'offer') {
+                await handleOffer(data.offer);
+            } else if (data.type === 'answer') {
+                await handleAnswer(data.answer);
+            } else if (data.type === 'ice-candidate') {
+                await handleIceCandidate(data.candidate);
+            }
+        };
+
+        // Инициализация WebRTC
+        function initWebRTC() {
+            pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            // Отправляем ICE candidates через signaling
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({
+                        type: 'ice-candidate',
+                        candidate: event.candidate
+                    }));
+                }
+            };
+
+            // Получаем data channel от другого peer
+            pc.ondatachannel = (event) => {
+                dataChannel = event.channel;
+                setupDataChannel();
+            };
+
+            // Создаём data channel (только один peer создаёт)
+            if (Math.random() > 0.5) {
+                createOffer();
+            }
+        }
+
+        async function createOffer() {
+            dataChannel = pc.createDataChannel('chat');
+            setupDataChannel();
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            ws.send(JSON.stringify({
+                type: 'offer',
+                offer: offer
+            }));
+        }
+
+        async function handleOffer(offer) {
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            ws.send(JSON.stringify({
+                type: 'answer',
+                answer: answer
+            }));
+        }
+
+        async function handleAnswer(answer) {
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        async function handleIceCandidate(candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+
+        function setupDataChannel() {
+            dataChannel.onopen = () => {
+                document.getElementById('status').textContent = 'P2P connection established! Messages go directly peer-to-peer.';
+            };
+
+            dataChannel.onmessage = (event) => {
+                addMessage('Peer: ' + event.data);
+            };
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value;
+
+            if (message && dataChannel && dataChannel.readyState === 'open') {
+                dataChannel.send(message);
+                addMessage('You: ' + message);
+                input.value = '';
+            }
+        }
+
+        function addMessage(text) {
+            const messagesDiv = document.getElementById('messages');
+            const messageEl = document.createElement('div');
+            messageEl.textContent = text;
+            messagesDiv.appendChild(messageEl);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Enter для отправки
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>

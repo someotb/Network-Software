@@ -1,8 +1,8 @@
 import asyncio
 import websockets
 
-# Простой Signaling сервер для WebRTC
-# Он должен пересылать сообщения от одного клиента всем остальным (или конкретному собеседнику)
+
+PROJECT_CODE = "products-s15"
 
 CONNECTIONS = set()
 
@@ -10,7 +10,6 @@ async def handler(websocket):
     CONNECTIONS.add(websocket)
     try:
         async for message in websocket:
-            # Рассылаем сообщение всем остальным подключенным клиентам
             for conn in CONNECTIONS:
                 if conn != websocket:
                     await conn.send(message)
