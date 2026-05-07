@@ -1,0 +1,216 @@
+version: '3.8'
+
+services:
+  # Tickets Service - основной сервис управления тикетами
+  tickets-service:
+    build:
+      context: ./services/tickets-service
+      dockerfile: Dockerfile
+    container_name: tickets-svc-s15
+    ports:
+      - "8124:8124"
+    environment:
+      - DATABASE_URL=postgresql://tickets_user:tickets_pass@postgres-tickets:5432/tickets_db
+      - REDIS_URL=redis://redis:6379/0
+      - USERS_SERVICE_URL=http://users-service:8125
+      - NOTIFICATION_SERVICE_URL=notification-service:50051
+      - ANALYTICS_SERVICE_URL=http://analytics-service:8126
+      - JWT_SECRET=your-secret-key-change-in-production
+    depends_on:
+      - postgres-tickets
+      - redis
+      - users-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8124/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tickets-network
+
+  # Users Service - управление пользователями и аутентификация
+  users-service:
+    build:
+      context: ./services/users-service
+      dockerfile: Dockerfile
+    container_name: users-svc-s15
+    ports:
+      - "8125:8125"
+    environment:
+      - DATABASE_URL=postgresql://users_user:users_pass@postgres-users:5432/users_db
+      - JWT_SECRET=your-secret-key-change-in-production
+      - JWT_EXPIRATION=3600
+    depends_on:
+      - postgres-users
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8125/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tickets-network
+
+  # Notification Service - отправка уведомлений через gRPC
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: notification-svc-s15
+    ports:
+      - "50051:50051"
+    environment:
+      - REDIS_URL=redis://redis:6379/1
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=notifications@example.com
+      - SMTP_PASSWORD=change-me
+    depends_on:
+      - redis
+    networks:
+      - tickets-network
+
+  # Analytics Service - статистика и метрики
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: analytics-svc-s15
+    ports:
+      - "8126:8126"
+    environment:
+      - REDIS_URL=redis://redis:6379/2
+      - TICKETS_SERVICE_URL=http://tickets-service:8124
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8126/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tickets-network
+
+  # PostgreSQL для Tickets Service
+  postgres-tickets:
+    image: postgres:15-alpine
+    container_name: postgres-tickets
+    environment:
+      - POSTGRES_DB=tickets_db
+      - POSTGRES_USER=tickets_user
+      - POSTGRES_PASSWORD=tickets_pass
+    volumes:
+      - postgres-tickets-data:/var/lib/postgresql/data
+      - ./init-scripts/tickets-init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickets_user -d tickets_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tickets-network
+
+  # PostgreSQL для Users Service
+  postgres-users:
+    image: postgres:15-alpine
+    container_name: postgres-users
+    environment:
+      - POSTGRES_DB=users_db
+      - POSTGRES_USER=users_user
+      - POSTGRES_PASSWORD=users_pass
+    volumes:
+      - postgres-users-data:/var/lib/postgresql/data
+      - ./init-scripts/users-init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U users_user -d users_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tickets-network
+
+  # Redis - кэш и очереди
+  redis:
+    image: redis:7-alpine
+    container_name: redis-tickets
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tickets-network
+
+  # Nginx - API Gateway
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - tickets-service
+      - users-service
+      - analytics-service
+    networks:
+      - tickets-network
+
+  # Prometheus - мониторинг метрик
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - tickets-network
+
+  # Grafana - визуализация метрик
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - tickets-network
+
+volumes:
+  postgres-tickets-data:
+    driver: local
+  postgres-users-data:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  tickets-network:
+    driver: bridge

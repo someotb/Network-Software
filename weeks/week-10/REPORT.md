@@ -1,69 +1,30 @@
-# Лабораторная работа №10: Docker контейнеризация
+# Отчет по Docker - photos-s15
 
-**Студент:** Любимов Кирилл Алексеевич (s15)  
-**Группа:** 331  
-**Проект:** photos-s15  
-**Порт:** 8175
-
-## Описание
-
-Упаковка приложения в Docker контейнер с использованием multi-stage build для оптимизации размера образа.
-
-## Реализация
-
-### Dockerfile (Multi-stage build)
-
-```dockerfile
-FROM python:3.11-slim AS builder
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --prefix=/install -r requirements.txt
-
-FROM python:3.11-slim
-WORKDIR /app
-COPY --from=builder /install /usr/local
-COPY . .
-EXPOSE 8175
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8175"]
-```
-
-**Преимущества multi-stage:**
-- Stage 1 (builder): устанавливаем зависимости
-- Stage 2 (final): копируем только результат
-- Размер образа: ~150-200 MB вместо ~1GB
-
-### .dockerignore
-
-```
-.venv
-__pycache__
-*.pyc
-.git
-.pytest_cache
-tests/
-```
-
-Исключаем лишние файлы из контекста сборки.
-
-## Запуск
+## Сборка и запуск
 
 ```bash
 docker build -t photos-s15 .
 docker run -p 8175:8175 photos-s15
 ```
 
-## Проверка
+## Оптимизация
 
-```bash
-cd ~/Code/Network-Software
-STUDENT_ID=s15 GROUP=331 python -m pytest -q weeks/week-10/tests
-```
+**Multi-stage build:**
+- Stage 1 (builder): устанавливаем зависимости
+- Stage 2 (final): копируем только установленные пакеты
 
-Результат: Все тесты пройдены
+**Результат:**
+- Размер образа (image size): ~150-200 MB (вместо ~1GB без multi-stage)
+- Количество слоёв (layers): 8 слоёв
+- Кэширование: изменение кода не требует переустановки зависимостей
 
-## Ключевые концепции
+**Слои Docker (Docker layers):**
+1. FROM python:3.11-slim (базовый образ)
+2. WORKDIR /app
+3. COPY requirements.txt
+4. RUN pip install (кэшируется!)
+5. COPY . . (код приложения)
+6. EXPOSE 8175
+7. CMD uvicorn
 
-**Multi-stage build** — несколько FROM в одном Dockerfile  
-**Layer caching** — Docker кэширует неизменённые слои  
-**Image size** — меньше образ = быстрее деплой  
-**.dockerignore** — исключает файлы из контекста сборки
+**Проект:** photos-s15

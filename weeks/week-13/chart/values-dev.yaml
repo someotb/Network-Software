@@ -1,6 +1,14 @@
 replicaCount: 1
 image:
-  repository: primer/obraz
+  repository: invoices-s15
   tag: "dev"
 service:
-  port: 8000
+  name: invoices-svc-s15
+  port: 8248
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "50m"
+  limits:
+    memory: "128Mi"
+    cpu: "250m"
