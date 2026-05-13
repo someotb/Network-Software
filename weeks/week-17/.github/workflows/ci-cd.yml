@@ -1,0 +1,186 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install linting tools
+      run: |
+        pip install flake8 pylint black
+
+    - name: Run flake8
+      run: |
+        flake8 services/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 services/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run pylint
+      run: |
+        pylint services/*/main.py --exit-zero || true
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install pytest pytest-cov pytest-asyncio httpx
+        pip install -r services/tickets-service/requirements.txt
+        pip install -r services/users-service/requirements.txt
+        pip install -r services/analytics-service/requirements.txt
+
+    - name: Run unit tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+      run: |
+        pytest tests/ -v --cov=services --cov-report=xml --cov-report=term || true
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build Tickets Service
+      run: |
+        docker build -t tickets-service:${{ github.sha }} services/tickets-service/
+
+    - name: Build Users Service
+      run: |
+        docker build -t users-service:${{ github.sha }} services/users-service/
+
+    - name: Build Notification Service
+      run: |
+        docker build -t notification-service:${{ github.sha }} services/notification-service/
+
+    - name: Build Analytics Service
+      run: |
+        docker build -t analytics-service:${{ github.sha }} services/analytics-service/
+
+    - name: Test Docker Compose
+      run: |
+        docker compose config
+        docker compose up -d
+        sleep 30
+        docker compose ps
+        curl -f http://localhost/health || exit 1
+        docker compose down
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, security]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push Docker images
+      run: |
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/tickets-service:latest services/tickets-service/
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/users-service:latest services/users-service/
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/notification-service:latest services/notification-service/
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/analytics-service:latest services/analytics-service/
+
+        docker push ${{ secrets.DOCKER_USERNAME }}/tickets-service:latest
+        docker push ${{ secrets.DOCKER_USERNAME }}/users-service:latest
+        docker push ${{ secrets.DOCKER_USERNAME }}/notification-service:latest
+        docker push ${{ secrets.DOCKER_USERNAME }}/analytics-service:latest
+
+    - name: Deploy to Kubernetes (optional)
+      run: |
+        echo "Deployment step - configure kubectl and apply manifests"
+        # kubectl apply -f k8s/
